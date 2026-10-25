@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-// Test du pipeline CI/CD GitHub Actions
+// Test du pipeline CI/CD GitHub Actions EL MEHDI
 
 contract StudentRegistry {
     // Structure pour représenter un étudiant
