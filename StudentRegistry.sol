@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+// Test du pipeline CI/CD GitHub Actions
+
 contract StudentRegistry {
     // Structure pour représenter un étudiant
     struct Student {
