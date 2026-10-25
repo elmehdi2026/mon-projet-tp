@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TP Web3 - Enregistrement des Étudiants (CI/CD)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen py-10 px-4">
+<div class="max-w-lg mx-auto bg-white rounded-xl shadow-md p-6 space-y-6">
+    <h1 class="text-2xl font-bold text-center text-indigo-600">Registre des Étudiants Web3</h1>
+    
+    <!-- Info sur l'adresse du contrat dynamique -->
+    <div class="text-center bg-gray-50 p-2 rounded text-xs text-gray-600">
+        Adresse du contrat : <span id="contractAddressDisplay" class="font-mono font-semibold text-indigo-600">Chargement...</span>
+    </div>
+
+    <!-- Connexion MetaMask -->
+    <div class="text-center">
+        <button id="connectBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition">
+            Connecter MetaMask
+        </button>
+        <p id="wallet" class="text-xs text-gray-500 mt-2 font-mono"></p>
+    </div>
+
+    <!-- Formulaire d'ajout -->
+    <div class="border-t pt-4 space-y-3">
+        <h2 class="font-semibold text-gray-700">Enregistrer un étudiant</h2>
+        <input type="text" id="lastName" placeholder="Nom" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+        <input type="text" id="firstName" placeholder="Prénom" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+        <button id="addBtn" class="w-full bg-green-600 text-white p-2 rounded-lg font-semibold hover:bg-green-700 transition">
+            Ajouter sur la Blockchain
+        </button>
+    </div>
+
+    <!-- Recherche par ID -->
+    <div class="border-t pt-4 space-y-2">
+        <h2 class="font-semibold text-gray-700">Rechercher par ID (Index)</h2>
+        <div class="flex gap-2">
+            <input type="number" id="searchId" placeholder="ID (ex: 0, 1...)" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+            <button id="searchBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">Chercher</button>
+        </div>
+        <div id="searchResult" class="text-sm font-medium text-gray-800 bg-gray-50 p-2 rounded"></div>
+    </div>
+
+    <!-- Liste complète -->
+    <div class="border-t pt-4">
+        <h2 class="font-semibold text-gray-700 mb-2">Liste des étudiants enregistrés :</h2>
+        <ul id="list" class="space-y-2 text-sm max-h-48 overflow-y-auto">
+            <li class="text-gray-400 italic">Connectez votre portefeuille pour afficher la liste.</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+let CONTRACT_ADDRESS = "";
+// Votre ABI reste identique à celle de votre ancien TP
+const CONTRACT_ABI = [
+    {"anonymous":false,"inputs":[{"indexed":false,"internalType":"string","name":"firstName","type":"string"},{"indexed":false,"internalType":"string","name":"lastName","type":"string"}],"name":"StudentRegistered","type":"event"},
+    {"inputs":[{"internalType":"string","name":"_firstName","type":"string"},{"internalType":"string","name":"_lastName","type":"string"}],"name":"addStudent","outputs":[],"stateMutability":"nonpayable","type":"function"},
+    {"inputs":[],"name":"getAllStudents","outputs":[{"components":[{"internalType":"string","name":"firstName","type":"string"},{"internalType":"string","name":"lastName","type":"string"}],"internalType":"struct StudentRegistry.Student[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"},
+    {"inputs":[{"internalType":"uint256","name":"_index","type":"uint256"}],"name":"getStudentById","outputs":[{"internalType":"string","name":"firstName","type":"string"},{"internalType":"string","name":"lastName","type":"string"}],"stateMutability":"view","type":"function"},
+    {"inputs":[],"name":"getStudentsCount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+    {"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"students","outputs":[{"internalType":"string","name":"firstName","type":"string"},{"internalType":"string","name":"lastName","type":"string"}],"stateMutability":"view","type":"function"}
+];
+
+let provider, signer, contract;
+
+// 1. Charger dynamiquement l'adresse du contrat depuis le fichier config.json généré par le CI/CD
+async function loadConfig() {
+    try {
+        const response = await fetch('./config.json');
+        const config = await response.json();
+        CONTRACT_ADDRESS = config.contractAddress;
+        document.getElementById("contractAddressDisplay").innerText = CONTRACT_ADDRESS;
+        console.log("Adresse du contrat chargée :", CONTRACT_ADDRESS);
+    } catch (err) {
+        console.error("Erreur lors du chargement de config.json", err);
+        document.getElementById("contractAddressDisplay").innerText = "Erreur de chargement de l'adresse";
+    }
+}
+
+// Charger la config dès l'ouverture de la page
+window.onload = loadConfig;
+
+document.getElementById("connectBtn").onclick = async () => {
+    if (!CONTRACT_ADDRESS) {
+        alert("L'adresse du contrat n'est pas encore chargée. Veuillez patienter ou vérifier le fichier config.json.");
+        return;
+    }
+    if (window.ethereum) {
+        try {
+            provider = new ethers.BrowserProvider(window.ethereum);
+            await provider.send("eth_requestAccounts", []);
+            signer = await provider.getSigner();
+            const address = await signer.getAddress();
+            document.getElementById("wallet").innerText = "Connecté : " + address;
+            
+            const formattedAddress = ethers.getAddress(CONTRACT_ADDRESS);
+            contract = new ethers.Contract(formattedAddress, CONTRACT_ABI, signer);
+            console.log("Contrat initialisé sur l'adresse :", contract.target);
+            loadStudents();
+        } catch (err) {
+            console.error("Erreur de connexion :", err);
+            alert("Erreur de connexion au portefeuille : " + err.message);
+        }
+    } else {
+        alert("Veuillez installer MetaMask !");
+    }
+};
+
+document.getElementById("addBtn").onclick = async () => {
+    if (!contract) return alert("Veuillez d'abord connecter votre wallet !");
+    const lastName = document.getElementById("lastName").value.trim();
+    const firstName = document.getElementById("firstName").value.trim();
+    if (!lastName || !firstName) return alert("Veuillez remplir tous les champs !");
+    try {
+        const tx = await contract.addStudent(firstName, lastName, { gasLimit: 100000 });
+        alert("Transaction envoyée ! Veuillez patienter...");
+        await tx.wait();
+        alert("Étudiant enregistré avec succès sur la blockchain !");
+        document.getElementById("lastName").value = "";
+        document.getElementById("firstName").value = "";
+        loadStudents();
+    } catch (err) {
+        console.error("Détail de l'erreur d'enregistrement :", err);
+        alert("Erreur lors de l'enregistrement : " + (err.reason || err.message));
+    }
+};
+
+document.getElementById("searchBtn").onclick = async () => {
+    if (!contract) return alert("Veuillez d'abord connecter votre wallet !");
+    const id = document.getElementById("searchId").value;
+    const resDiv = document.getElementById("searchResult");
+    if (id === "") return alert("Veuillez entrer un ID valide !");
+    try {
+        const student = await contract.getStudentById(id);
+        resDiv.innerText = `Résultat -> Nom : ${student.lastName}, Prénom : ${student.firstName}`;
+    } catch (err) {
+        console.error(err);
+        resDiv.innerText = "Étudiant introuvable pour cet ID.";
+    }
+};
+
+async function loadStudents() {
+    if (!contract) return;
+    const list = document.getElementById("list");
+    list.innerHTML = "";
+    try {
+        const students = await contract.getAllStudents();
+        if (students.length === 0) {
+            list.innerHTML = `<li class="text-gray-500 italic">Aucun étudiant enregistré pour le moment.</li>`;
+            return;
+        }
+        students.forEach((s, i) => {
+            const li = document.createElement("li");
+            li.className = "bg-gray-50 p-2 rounded border flex justify-between items-center";
+            li.innerHTML = `<span class="font-mono text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded">ID [${i}]</span> <span class="font-medium">${s.lastName} ${s.firstName}</span>`;
+            list.appendChild(li);
+        });
+    } catch (err) {
+        console.error(err);
+    }
+}
+</script>
+</body>
+</html>

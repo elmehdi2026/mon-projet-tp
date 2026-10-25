@@ -1,0 +1,10 @@
+# Environnement Python et secrets
+.env
+__pycache__/
+venv/
+env/
+*.pyc
+
+# Fichiers de compilation Solidity / solcx
+build/
+solc_modules/
